@@ -37,12 +37,16 @@ else:
 echo "📊 Collecting static files..."
 python manage.py collectstatic --noinput || true
 
-# Start gunicorn in the background
-echo "🌐 Starting Django web server (gunicorn)..."
-gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --daemon --access-logfile - --error-logfile -
+# Start gunicorn in the background (using & instead of --daemon)
+echo "🌐 Starting Django web server (gunicorn) on port $PORT..."
+gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --access-logfile - --error-logfile - &
+
+# Store gunicorn PID
+GUNICORN_PID=$!
+echo "✅ Gunicorn started with PID: $GUNICORN_PID"
 
 # Give gunicorn a moment to start
-sleep 2
+sleep 3
 
 # Start the bot in the foreground
 echo "🤖 Starting Telegram bot..."
