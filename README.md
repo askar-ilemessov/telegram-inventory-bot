@@ -238,31 +238,7 @@ docker exec -it inventory_pos_bot python manage.py test
 
 ## 🌐 Production Deployment
 
-### Option 1: Railway (Easiest - 5 minutes)
-
-**Perfect for quick deployment with zero server management!**
-
-1. **Push to GitHub** (if not already done)
-2. **Go to [Railway.app](https://railway.app)** and sign in
-3. **Click "New Project"** → "Deploy from GitHub repo"
-4. **Select** `telegram-inventory-bot`
-5. **Add PostgreSQL**: Click "+ New" → "Database" → "PostgreSQL"
-6. **Set Environment Variables**:
-   ```
-   SECRET_KEY=<generate-new-key>
-   DEBUG=False
-   ALLOWED_HOSTS=*.railway.app
-   TELEGRAM_BOT_TOKEN=<your-bot-token>
-   ```
-7. **Deploy!** Railway auto-deploys on push
-
-📖 **Detailed Guide:** See [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md)
-
-**Cost:** ~$5-10/month
-
----
-
-### Option 2: VPS (Full Control)
+### VPS Deployment
 
 **One-command deployment:**
 
