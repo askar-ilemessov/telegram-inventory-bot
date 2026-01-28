@@ -17,6 +17,10 @@ google-auth-httplib2==0.2.0
 python-dotenv==1.0.0
 pytz==2024.1
 
+# Production Server
+gunicorn==21.2.0
+whitenoise==6.6.0
+
 # Development
 ipython==8.18.1
 django-extensions==3.2.3
