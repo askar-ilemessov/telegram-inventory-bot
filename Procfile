@@ -1,3 +1,3 @@
-web: python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
-bot: python manage.py migrate && python bot/run_bot.py
+web: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --access-logfile - --error-logfile -
+bot: python manage.py run_bot
 
