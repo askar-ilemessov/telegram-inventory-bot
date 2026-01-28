@@ -46,5 +46,5 @@ sleep 2
 
 # Start the bot in the foreground
 echo "🤖 Starting Telegram bot..."
-exec python bot/run_bot.py
+exec python manage.py run_bot
 
