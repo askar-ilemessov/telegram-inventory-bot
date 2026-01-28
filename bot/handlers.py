@@ -44,13 +44,25 @@ async def cmd_start(message: Message, staff_profile: StaffProfile = None):
             "Обратитесь к администратору для получения доступа."
         )
         return
-    
-    await message.answer(
+
+    welcome_text = (
         f"👋 Привет, {staff_profile.full_name}!\n\n"
         f"📍 Локация: {staff_profile.location.name if staff_profile.location else 'Не назначена'}\n"
         f"👤 Роль: {staff_profile.get_role_display()}\n\n"
-        "Выберите действие:",
-        reply_markup=get_main_menu_keyboard()
+        "🤖 <b>Этот бот помогает управлять продажами и инвентарем</b>\n\n"
+        "📋 <b>Основные функции:</b>\n"
+        "• Оформление продаж и возвратов\n"
+        "• Управление сменами\n"
+        "• Просмотр отчетов и статистики\n"
+        "• Контроль остатков товаров\n\n"
+        "💡 Нажмите <b>❓ Помощь</b> для подробных инструкций\n\n"
+        "Выберите действие:"
+    )
+
+    await message.answer(
+        welcome_text,
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode="HTML"
     )
 
 
@@ -141,10 +153,16 @@ async def open_shift(message: Message, staff_profile: StaffProfile):
         await sync_to_async(ShiftLogger.log_shift_start)(shift)
 
         await message.answer(
-            f"✅ Смена открыта!\n\n"
+            f"✅ <b>Смена успешно открыта!</b>\n\n"
             f"📍 Локация: {shift.location.name}\n"
-            f"🕐 Время: {shift.started_at.strftime('%d.%m.%Y %H:%M')}",
-            reply_markup=get_main_menu_keyboard()
+            f"👤 Сотрудник: {staff_profile.full_name}\n"
+            f"🕐 Время открытия: {shift.started_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+            f"💡 Теперь вы можете:\n"
+            f"• Оформлять продажи (📦 Продажа)\n"
+            f"• Оформлять возвраты (↩️ Возврат)\n"
+            f"• Просматривать отчеты (📈 Отчеты)",
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
         )
 
         logger.info(f"Shift {shift.id} opened by {staff_profile.full_name}")
@@ -268,15 +286,23 @@ async def start_sale(message: Message, staff_profile: StaffProfile, state: FSMCo
     open_shift = await get_open_shift()
 
     if not open_shift:
-        await message.answer("❌ Смена не открыта. Откройте смену для продажи.")
+        await message.answer(
+            "❌ Смена не открыта.\n\n"
+            "💡 Для оформления продажи сначала откройте смену:\n"
+            "📊 Смена → 🟢 Открыть смену"
+        )
         return
 
     await state.set_state(SaleStates.waiting_for_product)
     await state.update_data(shift_id=open_shift.id)
 
-    await message.answer(
-        "Выберите категорию товара:",
-        reply_markup=get_cancel_keyboard()
+    # Send instruction message (will be deleted later)
+    instruction_msg = await message.answer(
+        "📦 <b>Оформление продажи</b>\n\n"
+        "Шаг 1: Выберите категорию товара из списка ниже\n\n"
+        "💡 Для отмены нажмите <b>❌ Отмена</b>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
     )
 
     # Send inline keyboard with categories
@@ -286,9 +312,15 @@ async def start_sale(message: Message, staff_profile: StaffProfile, state: FSMCo
 
     categories_keyboard = await get_categories_keyboard()
 
-    await message.answer(
+    categories_msg = await message.answer(
         "📂 Категории:",
         reply_markup=categories_keyboard
+    )
+
+    # Store message IDs for later cleanup
+    await state.update_data(
+        instruction_msg_id=instruction_msg.message_id,
+        categories_msg_id=categories_msg.message_id
     )
 
 
@@ -342,13 +374,26 @@ async def select_product(callback: CallbackQuery, state: FSMContext):
         await state.update_data(product_id=product_id)
         await state.set_state(SaleStates.waiting_for_quantity)
 
-        await callback.message.answer(
-            f"📦 Товар: {product.name}\n"
-            f"💰 Цена: {product.price}₸\n"
-            f"📊 Остаток: {product.stock_quantity} {product.unit}\n\n"
-            f"Введите количество:",
-            reply_markup=get_cancel_keyboard()
+        # Delete the categories message to keep chat clean
+        try:
+            await callback.message.delete()
+        except:
+            pass
+
+        # Send quantity request
+        quantity_msg = await callback.message.answer(
+            f"✅ Выбран товар: <b>{product.name}</b>\n\n"
+            f"💰 Цена: {product.price}₸ за {product.unit}\n"
+            f"📊 Доступно на складе: {product.stock_quantity} {product.unit}\n\n"
+            f"📝 Шаг 2: Введите количество\n\n"
+            f"💡 Примеры: 1 или 2 или 1.5\n"
+            f"⚠️ Максимум: {product.stock_quantity} {product.unit}",
+            reply_markup=get_cancel_keyboard(),
+            parse_mode="HTML"
         )
+
+        # Store message ID for cleanup
+        await state.update_data(quantity_msg_id=quantity_msg.message_id)
 
         await callback.answer()
 
@@ -361,13 +406,23 @@ async def enter_quantity(message: Message, state: FSMContext):
     """Handle quantity input."""
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("Продажа отменена.", reply_markup=get_main_menu_keyboard())
+        # Delete user's message
+        try:
+            await message.delete()
+        except:
+            pass
+        await message.answer("❌ Продажа отменена.", reply_markup=get_main_menu_keyboard())
         return
 
     try:
         qty = Decimal(message.text.replace(',', '.'))
 
         if qty <= 0:
+            # Delete user's invalid input
+            try:
+                await message.delete()
+            except:
+                pass
             await message.answer("❌ Количество должно быть больше нуля. Попробуйте снова:")
             return
 
@@ -384,13 +439,40 @@ async def enter_quantity(message: Message, state: FSMContext):
         product = await get_product()
         total = product.price * qty
 
-        await message.answer(
-            f"💰 Итого: {total}₸\n\n"
-            f"Выберите способ оплаты:",
-            reply_markup=get_payment_method_keyboard()
+        # Delete user's quantity input message
+        try:
+            await message.delete()
+        except:
+            pass
+
+        # Delete previous quantity request message
+        if 'quantity_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['quantity_msg_id'])
+            except:
+                pass
+
+        payment_msg = await message.answer(
+            f"📋 <b>Проверьте данные:</b>\n\n"
+            f"📦 Товар: {product.name}\n"
+            f"🔢 Количество: {qty} {product.unit}\n"
+            f"💵 Цена за единицу: {product.price}₸\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 <b>ИТОГО: {total}₸</b>\n\n"
+            f"📝 Шаг 3: Выберите способ оплаты:",
+            reply_markup=get_payment_method_keyboard(),
+            parse_mode="HTML"
         )
 
+        # Store message ID for cleanup
+        await state.update_data(payment_msg_id=payment_msg.message_id)
+
     except (InvalidOperation, ValueError):
+        # Delete user's invalid input
+        try:
+            await message.delete()
+        except:
+            pass
         await message.answer("❌ Неверный формат. Введите число (например: 1 или 2.5):")
 
 
@@ -399,7 +481,12 @@ async def select_payment_method(message: Message, state: FSMContext):
     """Handle payment method selection."""
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("Продажа отменена.", reply_markup=get_main_menu_keyboard())
+        # Delete user's message
+        try:
+            await message.delete()
+        except:
+            pass
+        await message.answer("❌ Продажа отменена.", reply_markup=get_main_menu_keyboard())
         return
 
     payment_method = parse_payment_method(message.text)
@@ -452,14 +539,36 @@ async def select_payment_method(message: Message, state: FSMContext):
         current_stock = await get_current_stock()
         await log_sale_action()
 
+        # Delete user's payment method selection message
+        try:
+            await message.delete()
+        except:
+            pass
+
+        # Delete instruction message
+        if 'instruction_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['instruction_msg_id'])
+            except:
+                pass
+
+        # Delete payment confirmation message
+        if 'payment_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['payment_msg_id'])
+            except:
+                pass
+
+        # Send only the final success message
         await message.answer(
-            f"✅ Продажа оформлена!\n\n"
+            f"✅ <b>Продажа оформлена!</b>\n\n"
             f"📦 Товар: {product.name}\n"
             f"📊 Количество: {qty} {product.unit}\n"
             f"💰 Сумма: {transaction.amount}₸\n"
             f"💳 Оплата: {payment_display}\n"
             f"📈 Остаток на складе: {current_stock} {product.unit}",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
         )
 
         logger.info(f"Sale created: {transaction.id}, new stock: {current_stock}")
@@ -495,15 +604,22 @@ async def start_refund(message: Message, staff_profile: StaffProfile, state: FSM
     open_shift = await get_open_shift()
 
     if not open_shift:
-        await message.answer("❌ Смена не открыта. Откройте смену для возврата.")
+        await message.answer(
+            "❌ Смена не открыта.\n\n"
+            "💡 Для оформления возврата сначала откройте смену:\n"
+            "📊 Смена → 🟢 Открыть смену"
+        )
         return
 
     await state.set_state(RefundStates.waiting_for_product)
     await state.update_data(shift_id=open_shift.id)
 
-    await message.answer(
-        "Выберите категорию товара для возврата:",
-        reply_markup=get_cancel_keyboard()
+    instruction_msg = await message.answer(
+        "↩️ <b>Оформление возврата</b>\n\n"
+        "Шаг 1: Выберите категорию товара для возврата\n\n"
+        "💡 Для отмены нажмите <b>❌ Отмена</b>",
+        reply_markup=get_cancel_keyboard(),
+        parse_mode="HTML"
     )
 
     # Send inline keyboard with categories
@@ -513,9 +629,15 @@ async def start_refund(message: Message, staff_profile: StaffProfile, state: FSM
 
     categories_keyboard = await get_categories_keyboard()
 
-    await message.answer(
+    categories_msg = await message.answer(
         "📂 Категории:",
         reply_markup=categories_keyboard
+    )
+
+    # Store message IDs for cleanup
+    await state.update_data(
+        refund_instruction_msg_id=instruction_msg.message_id,
+        refund_categories_msg_id=categories_msg.message_id
     )
 
 
@@ -534,12 +656,22 @@ async def select_refund_product(callback: CallbackQuery, state: FSMContext):
         await state.update_data(product_id=product_id)
         await state.set_state(RefundStates.waiting_for_quantity)
 
-        await callback.message.answer(
-            f"📦 Товар: {product.name}\n"
-            f"💰 Цена: {product.price}₸\n\n"
-            f"Введите количество для возврата:",
-            reply_markup=get_cancel_keyboard()
+        # Delete categories message
+        try:
+            await callback.message.delete()
+        except:
+            pass
+
+        quantity_msg = await callback.message.answer(
+            f"✅ Выбран товар: <b>{product.name}</b>\n\n"
+            f"💰 Цена: {product.price}₸ за {product.unit}\n\n"
+            f"📝 Шаг 2: Введите количество для возврата\n\n"
+            f"💡 Примеры: 1 или 2 или 1.5",
+            reply_markup=get_cancel_keyboard(),
+            parse_mode="HTML"
         )
+
+        await state.update_data(refund_quantity_msg_id=quantity_msg.message_id)
 
         await callback.answer()
 
@@ -552,13 +684,23 @@ async def enter_refund_quantity(message: Message, state: FSMContext):
     """Handle quantity input for refund."""
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("Возврат отменен.", reply_markup=get_main_menu_keyboard())
+        # Delete user's message
+        try:
+            await message.delete()
+        except:
+            pass
+        await message.answer("❌ Возврат отменен.", reply_markup=get_main_menu_keyboard())
         return
 
     try:
         qty = Decimal(message.text.replace(',', '.'))
 
         if qty <= 0:
+            # Delete user's invalid input
+            try:
+                await message.delete()
+            except:
+                pass
             await message.answer("❌ Количество должно быть больше нуля. Попробуйте снова:")
             return
 
@@ -575,13 +717,40 @@ async def enter_refund_quantity(message: Message, state: FSMContext):
         product = await get_product()
         total = product.price * qty
 
-        await message.answer(
-            f"💰 Сумма возврата: {total}₸\n\n"
-            f"Выберите способ возврата:",
-            reply_markup=get_payment_method_keyboard()
+        # Delete user's quantity input message
+        try:
+            await message.delete()
+        except:
+            pass
+
+        # Delete previous quantity request message
+        if 'refund_quantity_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['refund_quantity_msg_id'])
+            except:
+                pass
+
+        payment_msg = await message.answer(
+            f"📋 <b>Проверьте данные возврата:</b>\n\n"
+            f"📦 Товар: {product.name}\n"
+            f"🔢 Количество: {qty} {product.unit}\n"
+            f"💵 Цена за единицу: {product.price}₸\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💰 <b>СУММА ВОЗВРАТА: {total}₸</b>\n\n"
+            f"📝 Шаг 3: Выберите способ возврата:",
+            reply_markup=get_payment_method_keyboard(),
+            parse_mode="HTML"
         )
 
+        # Store message ID for cleanup
+        await state.update_data(refund_payment_msg_id=payment_msg.message_id)
+
     except (InvalidOperation, ValueError):
+        # Delete user's invalid input
+        try:
+            await message.delete()
+        except:
+            pass
         await message.answer("❌ Неверный формат. Введите число (например: 1 или 2.5):")
 
 
@@ -590,7 +759,12 @@ async def select_refund_payment_method(message: Message, state: FSMContext):
     """Handle payment method selection for refund."""
     if message.text == "❌ Отмена":
         await state.clear()
-        await message.answer("Возврат отменен.", reply_markup=get_main_menu_keyboard())
+        # Delete user's message
+        try:
+            await message.delete()
+        except:
+            pass
+        await message.answer("❌ Возврат отменен.", reply_markup=get_main_menu_keyboard())
         return
 
     payment_method = parse_payment_method(message.text)
@@ -643,14 +817,36 @@ async def select_refund_payment_method(message: Message, state: FSMContext):
         current_stock = await get_current_stock()
         await log_refund_action()
 
+        # Delete user's payment method selection message
+        try:
+            await message.delete()
+        except:
+            pass
+
+        # Delete instruction message
+        if 'refund_instruction_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['refund_instruction_msg_id'])
+            except:
+                pass
+
+        # Delete payment confirmation message
+        if 'refund_payment_msg_id' in data:
+            try:
+                await message.bot.delete_message(message.chat.id, data['refund_payment_msg_id'])
+            except:
+                pass
+
+        # Send only the final success message
         await message.answer(
-            f"✅ Возврат оформлен!\n\n"
+            f"✅ <b>Возврат оформлен!</b>\n\n"
             f"📦 Товар: {product.name}\n"
             f"📊 Количество: {qty} {product.unit}\n"
             f"💰 Сумма: {transaction.amount}₸\n"
             f"💳 Возврат: {payment_display}\n"
             f"📈 Остаток на складе: {current_stock} {product.unit}",
-            reply_markup=get_main_menu_keyboard()
+            reply_markup=get_main_menu_keyboard(),
+            parse_mode="HTML"
         )
 
         logger.info(f"Refund created: {transaction.id}, new stock: {current_stock}")
@@ -985,12 +1181,120 @@ async def show_inventory_report(message: Message, staff_profile: StaffProfile):
 async def show_help(message: Message):
     """Show help message."""
     help_text = (
-        "📖 Помощь по боту\n\n"
-        "📦 Продажа - оформить продажу товара\n"
-        "↩️ Возврат - оформить возврат товара\n"
-        "📊 Смена - управление сменой\n"
-        "📈 Отчет - отчет по текущей смене\n\n"
-        "По вопросам обращайтесь к администратору."
+        "📖 <b>ИНСТРУКЦИЯ ПО РАБОТЕ С БОТОМ</b>\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📊 <b>УПРАВЛЕНИЕ СМЕНОЙ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "🟢 <b>Открыть смену:</b>\n"
+        "1. Нажмите кнопку <b>📊 Смена</b>\n"
+        "2. Нажмите <b>🟢 Открыть смену</b>\n"
+        "3. Введите начальную сумму в кассе (например: 10000)\n"
+        "4. Смена открыта! Теперь можно оформлять продажи\n\n"
+
+        "🔴 <b>Закрыть смену:</b>\n"
+        "1. Нажмите <b>📊 Смена</b>\n"
+        "2. Нажмите <b>🔴 Закрыть смену</b>\n"
+        "3. Подтвердите закрытие\n"
+        "4. Получите полный отчет по смене\n\n"
+
+        "⚠️ <b>Важно:</b> Продажи можно оформлять только при открытой смене!\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📦 <b>ОФОРМЛЕНИЕ ПРОДАЖИ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "1. Нажмите кнопку <b>📦 Продажа</b>\n"
+        "2. Выберите категорию товара из списка\n"
+        "3. Выберите товар (показаны цена и остаток)\n"
+        "4. Введите количество (например: 2 или 1.5)\n"
+        "5. Проверьте сумму и подтвердите\n"
+        "6. Выберите способ оплаты:\n"
+        "   • 💵 <b>Наличные</b> - оплата наличными\n"
+        "   • 💳 <b>Карта</b> - оплата картой\n"
+        "   • 🔄 <b>Перевод</b> - банковский перевод\n"
+        "7. Готово! Продажа оформлена ✅\n\n"
+
+        "💡 <b>Подсказки:</b>\n"
+        "• Остаток товара показан в скобках\n"
+        "• Нельзя продать больше, чем есть на складе\n"
+        "• Можно отменить в любой момент кнопкой <b>❌ Отмена</b>\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "↩️ <b>ОФОРМЛЕНИЕ ВОЗВРАТА</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "1. Нажмите кнопку <b>↩️ Возврат</b>\n"
+        "2. Выберите категорию товара\n"
+        "3. Выберите товар для возврата\n"
+        "4. Введите количество для возврата\n"
+        "5. Проверьте сумму возврата\n"
+        "6. Выберите способ возврата (как при продаже)\n"
+        "7. Готово! Возврат оформлен ✅\n\n"
+
+        "⚠️ <b>Важно:</b> Возврат можно оформить только при открытой смене!\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📈 <b>ОТЧЕТЫ И СТАТИСТИКА</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "Нажмите <b>📈 Отчеты</b> и выберите нужный отчет:\n\n"
+
+        "📊 <b>Общий отчет</b>\n"
+        "Краткая сводка по смене: продажи, возвраты, итоги\n\n"
+
+        "💰 <b>Финансовый отчет</b>\n"
+        "Детальная финансовая информация:\n"
+        "• Общая выручка\n"
+        "• Сумма возвратов\n"
+        "• Чистая выручка\n"
+        "• Разбивка по способам оплаты\n"
+        "• Начальная и конечная сумма в кассе\n\n"
+
+        "📦 <b>Отчет продаж</b>\n"
+        "Полный список всех продаж:\n"
+        "• Время продажи\n"
+        "• Товар и количество\n"
+        "• Сумма и способ оплаты\n\n"
+
+        "↩️ <b>Отчет возвратов</b>\n"
+        "Полный список всех возвратов за смену\n\n"
+
+        "📋 <b>Инвентаризация</b>\n"
+        "Текущие остатки всех товаров:\n"
+        "• Группировка по категориям\n"
+        "• Количество на складе\n"
+        "• Цены товаров\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "❓ <b>ЧАСТЫЕ ВОПРОСЫ</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "❔ <b>Что делать, если нажал не ту кнопку?</b>\n"
+        "→ Нажмите <b>❌ Отмена</b> или <b>◀️ Назад</b>\n\n"
+
+        "❔ <b>Можно ли продавать без открытой смены?</b>\n"
+        "→ Нет, сначала нужно открыть смену\n\n"
+
+        "❔ <b>Как посмотреть остатки товаров?</b>\n"
+        "→ Отчеты → 📋 Инвентаризация\n\n"
+
+        "❔ <b>Где хранятся все данные?</b>\n"
+        "→ Все транзакции сохраняются в базе данных\n"
+        "→ Также создаются лог-файлы для каждой смены\n\n"
+
+        "❔ <b>Что делать при ошибке?</b>\n"
+        "→ Попробуйте отменить действие и повторить\n"
+        "→ Если проблема повторяется - обратитесь к администратору\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "📞 <b>ПОДДЕРЖКА</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+        "По всем вопросам обращайтесь к администратору системы.\n\n"
+
+        "💡 <b>Совет:</b> Сохраните эту инструкцию, чтобы всегда иметь под рукой!"
     )
-    await message.answer(help_text)
+    await message.answer(help_text, parse_mode="HTML")
 
