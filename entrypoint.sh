@@ -23,6 +23,7 @@ else:
     print('Superuser already exists')
 " || true
 
-echo "Starting bot..."
-exec python manage.py run_bot
+# Execute the CMD passed from docker-compose
+echo "Starting: $@"
+exec "$@"
 
