@@ -22,8 +22,10 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . /app/
 
 # Make entrypoint executable
-COPY entrypoint.sh /app/
 RUN chmod +x /app/entrypoint.sh
+
+# Collect static files for Django admin
+RUN python manage.py collectstatic --noinput 2>/dev/null || true
 
 # Create directory for shift logs
 RUN mkdir -p /app/shift_logs

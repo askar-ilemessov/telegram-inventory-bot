@@ -27,16 +27,6 @@ DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
 
-# Add Railway.app domain if deployed on Railway
-if 'RAILWAY_ENVIRONMENT' in os.environ:
-    ALLOWED_HOSTS.append('.railway.app')
-
-# Add CSRF trusted origins for Railway
-if 'RAILWAY_ENVIRONMENT' in os.environ:
-    CSRF_TRUSTED_ORIGINS = [
-        'https://*.railway.app',
-    ]
-
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
