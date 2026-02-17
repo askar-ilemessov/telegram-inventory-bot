@@ -27,11 +27,6 @@ DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
 
-# Debug: Print configuration on startup
-print(f"DEBUG: {DEBUG}")
-print(f"ALLOWED_HOSTS: {ALLOWED_HOSTS}")
-print(f"SECRET_KEY set: {bool(SECRET_KEY)}")
-
 # Application definition
 INSTALLED_APPS = [
     'django.contrib.admin',
