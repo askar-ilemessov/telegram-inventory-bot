@@ -3,14 +3,14 @@ URL configuration for Inventory POS Bot project.
 """
 from django.contrib import admin
 from django.urls import path
-from django.http import JsonResponse
+from django.shortcuts import render
 
-def health_check(request):
-    """Health check endpoint for Railway."""
-    return JsonResponse({'status': 'ok'})
+def landing_page(request):
+    """Landing page with link to admin."""
+    return render(request, 'landing.html')
 
 urlpatterns = [
-    path('', health_check, name='health_check'),
+    path('', landing_page, name='landing'),
     path('admin/', admin.site.urls),
 ]
 
