@@ -3,11 +3,16 @@
 # Exit on error
 set -e
 
-echo "Waiting for PostgreSQL..."
-while ! pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
-  sleep 1
-done
-echo "PostgreSQL is ready!"
+# Skip database wait on Railway (pg_isready doesn't work with Railway's internal networking)
+if [ "$SKIP_DB_WAIT" = "true" ]; then
+  echo "Skipping PostgreSQL wait check (SKIP_DB_WAIT=true)"
+else
+  echo "Waiting for PostgreSQL..."
+  while ! pg_isready -h $DB_HOST -p $DB_PORT -U $DB_USER; do
+    sleep 1
+  done
+  echo "PostgreSQL is ready!"
+fi
 
 echo "Running migrations..."
 python manage.py migrate --noinput
@@ -23,6 +28,7 @@ else:
     print('Superuser already exists')
 " || true
 
-echo "Starting bot..."
-exec python manage.py run_bot
+# Execute the CMD passed from docker-compose
+echo "Starting: $@"
+exec "$@"
 

@@ -45,6 +45,12 @@ db.sqlite3-journal
 # Google Credentials
 service_account.json
 
+# Shift logs (keep directory, ignore logs)
+shift_logs/*.log
+
+# AI agent documentation
+.ai_docs/
+
 # OS
 .DS_Store
 Thumbs.db
