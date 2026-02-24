@@ -1,0 +1,112 @@
+{% extends 'base.html' %}
+
+{% block title %}Закупка товара - {{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-cart-plus"></i> Закупка товара
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Товар:</strong> {{ product.name }} ({{ product.category.name }})
+                    <br>
+                    <strong>Текущий остаток на складе:</strong> {{ product.storage_stock.quantity }} {{ product.unit }}
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="quantity" class="form-label">
+                            <i class="bi bi-box"></i> Количество для закупки *
+                        </label>
+                        <div class="input-group">
+                            <input type="number" 
+                                   class="form-control" 
+                                   id="quantity" 
+                                   name="quantity" 
+                                   step="0.01" 
+                                   min="0.01" 
+                                   required 
+                                   placeholder="Например: 10">
+                            <span class="input-group-text">{{ product.unit }}</span>
+                        </div>
+                        <small class="form-text text-muted">
+                            Введите количество товара для закупки
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="purchase_price" class="form-label">
+                            <i class="bi bi-currency-exchange"></i> Цена закупки (за единицу) *
+                        </label>
+                        <div class="input-group">
+                            <input type="number" 
+                                   class="form-control" 
+                                   id="purchase_price" 
+                                   name="purchase_price" 
+                                   step="0.01" 
+                                   min="0" 
+                                   required 
+                                   placeholder="Например: 500">
+                            <span class="input-group-text">₸</span>
+                        </div>
+                        <small class="form-text text-muted">
+                            Цена продажи: {{ product.price }}₸/{{ product.unit }}
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="supplier" class="form-label">
+                            <i class="bi bi-truck"></i> Поставщик (необязательно)
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="supplier" 
+                               name="supplier" 
+                               placeholder="Название поставщика">
+                        <small class="form-text text-muted">
+                            Можно оставить пустым
+                        </small>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-success btn-lg">
+                            <i class="bi bi-check-circle"></i> Оформить закупку
+                        </button>
+                        <a href="{% url 'inventory_dashboard' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle"></i> Отмена
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Calculate total on input
+    document.addEventListener('DOMContentLoaded', function() {
+        const quantityInput = document.getElementById('quantity');
+        const priceInput = document.getElementById('purchase_price');
+        
+        function updateTotal() {
+            const quantity = parseFloat(quantityInput.value) || 0;
+            const price = parseFloat(priceInput.value) || 0;
+            const total = quantity * price;
+            
+            // You can add a total display here if needed
+            console.log('Total:', total);
+        }
+        
+        quantityInput.addEventListener('input', updateTotal);
+        priceInput.addEventListener('input', updateTotal);
+    });
+</script>
+{% endblock %}

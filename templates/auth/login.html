@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход — Inventory POS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 16px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+            overflow: hidden;
+        }
+        .login-header {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+            padding: 2rem;
+            text-align: center;
+            color: white;
+        }
+        .login-header .logo {
+            font-size: 2.5rem;
+            margin-bottom: .5rem;
+        }
+        .login-body {
+            background: white;
+            padding: 2rem;
+        }
+        .form-control:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
+        .btn-login {
+            background: linear-gradient(135deg, #0d6efd 0%, #6610f2 100%);
+            border: none;
+            padding: .65rem;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: .03em;
+        }
+        .btn-login:hover {
+            opacity: .92;
+        }
+        .input-group-text {
+            background: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-card">
+    <!-- Header -->
+    <div class="login-header">
+        <div class="logo"><i class="bi bi-box-seam"></i></div>
+        <h4 class="mb-0 fw-bold">Inventory POS</h4>
+        <p class="mb-0 opacity-75 small">Система управления складом и продажами</p>
+    </div>
+
+    <!-- Form -->
+    <div class="login-body">
+        <h5 class="mb-4 text-center text-muted fw-normal">Вход в систему</h5>
+
+        {% if form.errors %}
+        <div class="alert alert-danger py-2 small">
+            <i class="bi bi-exclamation-triangle"></i>
+            Неверный логин или пароль. Попробуйте ещё раз.
+        </div>
+        {% endif %}
+
+        {% if next %}
+        <div class="alert alert-info py-2 small">
+            <i class="bi bi-info-circle"></i>
+            Для доступа к этой странице необходимо войти.
+        </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <div class="mb-3">
+                <label for="id_username" class="form-label fw-semibold">Логин</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input type="text"
+                           name="username"
+                           id="id_username"
+                           class="form-control"
+                           placeholder="Введите логин"
+                           autofocus
+                           required>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="id_password" class="form-label fw-semibold">Пароль</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                    <input type="password"
+                           name="password"
+                           id="id_password"
+                           class="form-control"
+                           placeholder="Введите пароль"
+                           required>
+                    <button class="btn btn-outline-secondary"
+                            type="button"
+                            onclick="togglePassword()">
+                        <i class="bi bi-eye" id="eyeIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-login btn-primary text-white">
+                    <i class="bi bi-box-arrow-in-right"></i> Войти
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function togglePassword() {
+        const input = document.getElementById('id_password');
+        const icon = document.getElementById('eyeIcon');
+        if (input.type === 'password') {
+            input.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            input.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    }
+</script>
+
+</body>
+</html>

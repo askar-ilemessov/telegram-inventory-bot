@@ -79,9 +79,9 @@ class StaffProfile(models.Model):
 
     def can_manage_shifts(self) -> bool:
         """Check if user can manage shifts."""
-        return self.role in [self.Role.ADMIN, self.Role.MANAGER]
+        return self.role in [self.Role.ADMIN, self.Role.MANAGER, self.Role.CASHIER]
 
     def can_close_shift(self) -> bool:
         """Check if user can close shifts."""
-        return self.role in [self.Role.ADMIN, self.Role.MANAGER]
+        return self.role in [self.Role.ADMIN, self.Role.MANAGER, self.Role.CASHIER]
 
