@@ -1,0 +1,461 @@
+{% extends 'base.html' %}
+
+{% block title %}Отчеты — {{ location.name }}{% endblock %}
+{% block nav_reports %}active{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        border-left: 4px solid #dee2e6;
+        transition: transform .15s;
+    }
+    .stat-card:hover { transform: translateY(-2px); }
+    .stat-card-sales  { border-left-color: #28a745; }
+    .stat-card-refunds { border-left-color: #dc3545; }
+    .stat-card-net    { border-left-color: #0d6efd; }
+    .stat-card-cash   { border-left-color: #fd7e14; }
+    .stat-card-card   { border-left-color: #6610f2; }
+    .stat-card-transfer { border-left-color: #0dcaf0; }
+    .stat-number { font-size: 1.75rem; font-weight: 700; line-height: 1.1; }
+    .section-header {
+        font-size: .7rem;
+        font-weight: 600;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+        color: #6c757d;
+        margin-bottom: .75rem;
+    }
+    .shift-badge { font-size: .75rem; }
+    .table-transactions th { white-space: nowrap; }
+    .payment-icon-CASH     { color: #fd7e14; }
+    .payment-icon-CARD     { color: #6610f2; }
+    .payment-icon-TRANSFER { color: #0dcaf0; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ═══════════════════════════════════════════════════════════
+     HEADER
+════════════════════════════════════════════════════════════ -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+    <div>
+        <h2 class="mb-0"><i class="bi bi-bar-chart-line"></i> Отчеты</h2>
+        <span class="text-muted">
+            <i class="bi bi-geo-alt"></i> {{ location.name }} &nbsp;|&nbsp;
+            <i class="bi bi-person"></i> {{ staff_profile.full_name }}
+        </span>
+    </div>
+
+    <!-- Shift selector -->
+    <form method="get" class="d-flex align-items-center gap-2" style="min-width:320px">
+        <label class="text-nowrap text-muted small mb-0">Смена:</label>
+        <select name="shift_id" class="form-select form-select-sm" onchange="this.form.submit()">
+            {% for shift in all_shifts %}
+            <option value="{{ shift.id }}"
+                {% if selected_shift and selected_shift.id == shift.id %}selected{% endif %}>
+                {{ shift.started_at|date:"d.m.Y H:i" }} — {{ shift.staff.full_name }}
+                {% if not shift.is_closed %}● Открыта{% endif %}
+            </option>
+            {% empty %}
+            <option disabled>Нет смен</option>
+            {% endfor %}
+        </select>
+    </form>
+</div>
+
+{% if not selected_shift %}
+<div class="alert alert-info"><i class="bi bi-info-circle"></i> Нет данных — смены ещё не открывались.</div>
+{% else %}
+
+<!-- ═══════════════════════════════════════════════════════════
+     SHIFT STATUS BAR
+════════════════════════════════════════════════════════════ -->
+<div class="card mb-4">
+    <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
+        {% if not selected_shift.is_closed %}
+        <span class="badge bg-success fs-6">● Смена открыта</span>
+        {% else %}
+        <span class="badge bg-secondary fs-6">Смена закрыта</span>
+        {% endif %}
+        <span class="text-muted small">
+            <i class="bi bi-clock"></i>
+            Открыта: <strong>{{ selected_shift.started_at|date:"d.m.Y H:i" }}</strong>
+        </span>
+        {% if selected_shift.closed_at %}
+        <span class="text-muted small">
+            <i class="bi bi-clock-history"></i>
+            Закрыта: <strong>{{ selected_shift.closed_at|date:"d.m.Y H:i" }}</strong>
+        </span>
+        {% endif %}
+        <span class="text-muted small">
+            <i class="bi bi-person"></i> {{ selected_shift.staff.full_name }}
+        </span>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECTION 1 — SUMMARY CARDS
+════════════════════════════════════════════════════════════ -->
+<p class="section-header"><i class="bi bi-speedometer2"></i> Общие итоги смены</p>
+<div class="row g-3 mb-4">
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-sales h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Продажи</div>
+                <div class="stat-number text-success">{{ summary.sales_total }}₸</div>
+                <div class="text-muted small mt-1">{{ summary.sales_count }} транз.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-refunds h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Возвраты</div>
+                <div class="stat-number text-danger">{{ summary.refunds_total }}₸</div>
+                <div class="text-muted small mt-1">{{ summary.refunds_count }} транз.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-net h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1">Чистая выручка</div>
+                <div class="stat-number text-primary">{{ summary.net_total }}₸</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-cash h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-cash-coin"></i> Наличные</div>
+                <div class="stat-number" style="color:#fd7e14">{{ summary.total_cash }}₸</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-card h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-credit-card"></i> Карта</div>
+                <div class="stat-number" style="color:#6610f2">{{ summary.total_card }}₸</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-xl-2">
+        <div class="card stat-card stat-card-transfer h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-phone"></i> Перевод</div>
+                <div class="stat-number" style="color:#0dcaf0">{{ summary.total_transfer }}₸</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECTION 2 — PRODUCT BREAKDOWNS
+════════════════════════════════════════════════════════════ -->
+<p class="section-header"><i class="bi bi-pie-chart"></i> Разбивка по товарам</p>
+<div class="row g-3 mb-4">
+
+    <!-- Sales by product -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-bag-check text-success"></i> Продажи по товарам</span>
+                <span class="badge bg-success">{{ summary.sales_count }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Товар</th>
+                            <th class="text-end">Кол-во</th>
+                            <th class="text-end">Сумма</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for name, data in summary.product_summary.items %}
+                        <tr>
+                            <td>{{ name }}</td>
+                            <td class="text-end">{{ data.qty }}</td>
+                            <td class="text-end fw-semibold">{{ data.amount }}₸</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Нет продаж</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if summary.product_summary %}
+                    <tfoot class="table-light">
+                        <tr>
+                            <th>Итого</th>
+                            <th class="text-end">{{ summary.sales_count }}</th>
+                            <th class="text-end">{{ summary.sales_total }}₸</th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Refunds by product -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-arrow-return-left text-danger"></i> Возвраты по товарам</span>
+                <span class="badge bg-danger">{{ summary.refunds_count }}</span>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Товар</th>
+                            <th class="text-end">Кол-во</th>
+                            <th class="text-end">Сумма</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for name, data in summary.refund_summary.items %}
+                        <tr>
+                            <td>{{ name }}</td>
+                            <td class="text-end">{{ data.qty }}</td>
+                            <td class="text-end fw-semibold text-danger">{{ data.amount }}₸</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="3" class="text-center text-muted py-3">Нет возвратов</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if summary.refund_summary %}
+                    <tfoot class="table-light">
+                        <tr>
+                            <th>Итого</th>
+                            <th class="text-end">{{ summary.refunds_count }}</th>
+                            <th class="text-end text-danger">{{ summary.refunds_total }}₸</th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECTION 3 — DETAILED SALES TRANSACTIONS
+════════════════════════════════════════════════════════════ -->
+<p class="section-header"><i class="bi bi-list-ul"></i> Детальный журнал продаж</p>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-bag text-success"></i> Продажи — {{ summary.sales_count }} транзакций</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                data-bs-toggle="collapse" data-bs-target="#salesTable">
+            <i class="bi bi-chevron-expand"></i>
+        </button>
+    </div>
+    <div class="collapse show" id="salesTable">
+        <div class="card-body p-0">
+            {% if sales_details %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm table-transactions mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Время</th>
+                            <th>Товар</th>
+                            <th class="text-end">Кол-во</th>
+                            <th class="text-end">Цена/ед.</th>
+                            <th class="text-end">Сумма</th>
+                            <th class="text-center">Оплата</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in sales_details %}
+                        <tr>
+                            <td class="text-muted">{{ forloop.counter }}</td>
+                            <td class="text-nowrap">{{ sale.time|date:"H:i" }}</td>
+                            <td>{{ sale.product }}</td>
+                            <td class="text-end">{{ sale.qty }}</td>
+                            <td class="text-end text-muted">
+                                {% if sale.qty %}{{ sale.amount|default:0 }}₸{% endif %}
+                            </td>
+                            <td class="text-end fw-semibold">{{ sale.amount }}₸</td>
+                            <td class="text-center">
+                                {% if sale.payment_method_code == 'CASH' %}
+                                    <span class="payment-icon-CASH"><i class="bi bi-cash-coin"></i> {{ sale.payment_method }}</span>
+                                {% elif sale.payment_method_code == 'CARD' %}
+                                    <span class="payment-icon-CARD"><i class="bi bi-credit-card"></i> {{ sale.payment_method }}</span>
+                                {% elif sale.payment_method_code == 'TRANSFER' %}
+                                    <span class="payment-icon-TRANSFER"><i class="bi bi-phone"></i> {{ sale.payment_method }}</span>
+                                {% else %}
+                                    {{ sale.payment_method }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="5">Итого</th>
+                            <th class="text-end">{{ summary.sales_total }}₸</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-center text-muted py-4 mb-0">Нет продаж в этой смене</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECTION 4 — DETAILED REFUND TRANSACTIONS
+════════════════════════════════════════════════════════════ -->
+<p class="section-header"><i class="bi bi-list-ul"></i> Детальный журнал возвратов</p>
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-arrow-return-left text-danger"></i> Возвраты — {{ summary.refunds_count }} транзакций</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                data-bs-toggle="collapse" data-bs-target="#refundsTable">
+            <i class="bi bi-chevron-expand"></i>
+        </button>
+    </div>
+    <div class="collapse show" id="refundsTable">
+        <div class="card-body p-0">
+            {% if refunds_details %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm table-transactions mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>#</th>
+                            <th>Время</th>
+                            <th>Товар</th>
+                            <th class="text-end">Кол-во</th>
+                            <th class="text-end">Сумма</th>
+                            <th class="text-center">Способ</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for refund in refunds_details %}
+                        <tr>
+                            <td class="text-muted">{{ forloop.counter }}</td>
+                            <td class="text-nowrap">{{ refund.time|date:"H:i" }}</td>
+                            <td>{{ refund.product }}</td>
+                            <td class="text-end">{{ refund.qty }}</td>
+                            <td class="text-end fw-semibold text-danger">{{ refund.amount }}₸</td>
+                            <td class="text-center">
+                                {% if refund.payment_method_code == 'CASH' %}
+                                    <span class="payment-icon-CASH"><i class="bi bi-cash-coin"></i> {{ refund.payment_method }}</span>
+                                {% elif refund.payment_method_code == 'CARD' %}
+                                    <span class="payment-icon-CARD"><i class="bi bi-credit-card"></i> {{ refund.payment_method }}</span>
+                                {% elif refund.payment_method_code == 'TRANSFER' %}
+                                    <span class="payment-icon-TRANSFER"><i class="bi bi-phone"></i> {{ refund.payment_method }}</span>
+                                {% else %}
+                                    {{ refund.payment_method }}
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th colspan="4">Итого</th>
+                            <th class="text-end text-danger">{{ summary.refunds_total }}₸</th>
+                            <th></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-center text-muted py-4 mb-0">Нет возвратов в этой смене</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endif %} {# end if selected_shift #}
+
+<!-- ═══════════════════════════════════════════════════════════
+     SECTION 5 — INVENTORY (always visible)
+════════════════════════════════════════════════════════════ -->
+<p class="section-header"><i class="bi bi-boxes"></i> Текущий инвентарь — {{ location.name }}</p>
+<div class="card mb-5">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clipboard-data"></i> Остатки товаров (склад + витрина)</span>
+        <button class="btn btn-sm btn-outline-secondary"
+                data-bs-toggle="collapse" data-bs-target="#inventoryTable">
+            <i class="bi bi-chevron-expand"></i>
+        </button>
+    </div>
+    <div class="collapse show" id="inventoryTable">
+        <div class="card-body p-0">
+            {% if inventory %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Категория</th>
+                            <th>Товар</th>
+                            <th class="text-end">Цена</th>
+                            <th class="text-center">
+                                <i class="bi bi-box"></i> Склад
+                            </th>
+                            <th class="text-center">
+                                <i class="bi bi-shop"></i> Витрина
+                            </th>
+                            <th class="text-center">Всего</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in inventory %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-secondary">{{ item.category }}</span>
+                            </td>
+                            <td><strong>{{ item.name }}</strong></td>
+                            <td class="text-end">{{ item.price }}₸</td>
+                            <td class="text-center">
+                                {% if item.storage > 0 %}
+                                <span class="badge stock-badge stock-good">{{ item.storage }} {{ item.unit }}</span>
+                                {% else %}
+                                <span class="badge stock-badge stock-low">0 {{ item.unit }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if item.display > 10 %}
+                                <span class="badge stock-badge stock-good">{{ item.display }} {{ item.unit }}</span>
+                                {% elif item.display > 0 %}
+                                <span class="badge stock-badge stock-medium">{{ item.display }} {{ item.unit }}</span>
+                                {% else %}
+                                <span class="badge stock-badge stock-low">0 {{ item.unit }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center fw-semibold">
+                                {{ item.total }} {{ item.unit }}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-center text-muted py-4 mb-0">Нет товаров</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% endblock %}

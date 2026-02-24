@@ -21,12 +21,18 @@ class RefundStates(StatesGroup):
 class ShiftStates(StatesGroup):
     """States for shift management."""
     waiting_for_close_confirmation = State()
-    waiting_for_stock_count = State()
 
 
-class AdjustmentStates(StatesGroup):
-    """States for inventory adjustment."""
+class PurchaseStates(StatesGroup):
+    """States for purchase process (supplier → storage)."""
     waiting_for_product = State()
     waiting_for_quantity = State()
-    waiting_for_notes = State()
+    waiting_for_price = State()
+    waiting_for_supplier = State()
+
+
+class TransferStates(StatesGroup):
+    """States for transfer process (storage → display)."""
+    waiting_for_product = State()
+    waiting_for_quantity = State()
 

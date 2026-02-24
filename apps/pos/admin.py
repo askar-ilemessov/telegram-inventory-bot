@@ -3,7 +3,7 @@ Admin configuration for POS app.
 """
 from django.contrib import admin
 from django.utils.html import format_html
-from .models import Shift, Transaction, Payment, StockCount
+from .models import Shift, Transaction, Payment, StockCount, ShiftSnapshot
 
 
 class TransactionInline(admin.TabularInline):
@@ -128,6 +128,31 @@ class PaymentAdmin(admin.ModelAdmin):
 @admin.register(StockCount)
 class StockCountAdmin(admin.ModelAdmin):
     """Admin for StockCount model."""
+    list_display = ('id', 'shift', 'product', 'quantity', 'created_at')
+    list_filter = ('created_at', 'shift__location')
+    search_fields = ('product__name', 'shift__staff__user__username')
+    readonly_fields = ('shift', 'product', 'quantity', 'created_at')
+    date_hierarchy = 'created_at'
+    
+    fieldsets = (
+        (None, {
+            'fields': ('shift', 'product', 'quantity')
+        }),
+        ('Дополнительно', {
+            'fields': ('notes', 'created_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def get_queryset(self, request):
+        """Optimize queryset."""
+        qs = super().get_queryset(request)
+        return qs.select_related('shift__staff__user', 'shift__location', 'product')
+
+
+@admin.register(ShiftSnapshot)
+class ShiftSnapshotAdmin(admin.ModelAdmin):
+    """Admin for ShiftSnapshot model."""
     list_display = ('id', 'shift', 'product', 'quantity', 'created_at')
     list_filter = ('created_at', 'shift__location')
     search_fields = ('product__name', 'shift__staff__user__username')
