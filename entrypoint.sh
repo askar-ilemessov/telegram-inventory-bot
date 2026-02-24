@@ -15,7 +15,7 @@ else
 fi
 
 echo "Running migrations..."
-python manage.py migrate --noinput
+# python manage.py migrate --noinput
 
 echo "Creating superuser if needed..."
 python manage.py shell -c "
