@@ -24,8 +24,6 @@ from .keyboards import (
     get_confirmation_keyboard,
     get_categories_inline_keyboard,
     get_products_inline_keyboard,
-    get_reports_menu_keyboard,
-    get_cashier_reports_menu_keyboard,
     parse_payment_method
 )
 from .shift_logger import ShiftLogger
@@ -554,8 +552,13 @@ async def select_payment_method(message: Message, state: FSMContext, staff_profi
 
         @sync_to_async
         def get_current_stock():
-            # Refresh product from DB to get updated stock
-            return Product.objects.get(id=product_id).stock_quantity
+            try:
+                display_qty = DisplayStock.objects.get(
+                    product_id=product_id, location_id=staff_profile.location_id
+                ).quantity
+            except DisplayStock.DoesNotExist:
+                display_qty = 0
+            return Product.objects.get(id=product_id).stock_quantity, display_qty
 
         @sync_to_async
         def log_sale_action():
@@ -570,7 +573,7 @@ async def select_payment_method(message: Message, state: FSMContext, staff_profi
             )
 
         payment_display = await get_payment_method_display()
-        current_stock = await get_current_stock()
+        current_stock, display_qty = await get_current_stock()
         await log_sale_action()
 
         # Delete user's payment method selection message
@@ -593,7 +596,7 @@ async def select_payment_method(message: Message, state: FSMContext, staff_profi
             f"📊 Количество: {qty} {product.unit}\n"
             f"💰 Сумма: {transaction.amount}₸\n"
             f"💳 Оплата: {payment_display}\n"
-            f"📊 Остаток (склад+витрина): {current_stock} {product.unit}",
+            f"🏪 Остаток (витрина): {display_qty} {product.unit}",
             reply_markup=_menu_keyboard(staff_profile),
             parse_mode="HTML"
         )
@@ -796,8 +799,13 @@ async def select_refund_payment_method(message: Message, state: FSMContext, staf
 
         @sync_to_async
         def get_current_stock():
-            # Refresh product from DB to get updated stock
-            return Product.objects.get(id=product_id).stock_quantity
+            try:
+                display_qty = DisplayStock.objects.get(
+                    product_id=product_id, location_id=staff_profile.location_id
+                ).quantity
+            except DisplayStock.DoesNotExist:
+                display_qty = 0
+            return Product.objects.get(id=product_id).stock_quantity, display_qty
 
         @sync_to_async
         def log_refund_action():
@@ -812,7 +820,7 @@ async def select_refund_payment_method(message: Message, state: FSMContext, staf
             )
 
         payment_display = await get_payment_method_display()
-        current_stock = await get_current_stock()
+        current_stock, display_qty = await get_current_stock()
         await log_refund_action()
 
         # Delete user's payment method selection message
@@ -835,7 +843,7 @@ async def select_refund_payment_method(message: Message, state: FSMContext, staf
             f"📊 Количество: {qty} {product.unit}\n"
             f"💰 Сумма: {abs(transaction.amount)}₸\n"
             f"💳 Возврат: {payment_display}\n"
-            f"📊 Остаток (склад+витрина): {current_stock} {product.unit}",
+            f"🏪 Остаток (витрина): {display_qty} {product.unit}",
             reply_markup=_menu_keyboard(staff_profile),
             parse_mode="HTML"
         )
@@ -902,361 +910,143 @@ async def show_vitrina(message: Message, staff_profile: StaffProfile):
     )
 
 
-@router.message(F.text == "📈 Отчеты")
-async def show_reports_menu(message: Message, staff_profile: StaffProfile):
-    """Show reports menu. Cashiers see a limited subset."""
-    if staff_profile.role in [StaffProfile.Role.ADMIN, StaffProfile.Role.MANAGER]:
-        kb = get_reports_menu_keyboard()
-    else:
-        kb = get_cashier_reports_menu_keyboard()
-    await message.answer("📊 Выберите тип отчета:", reply_markup=kb)
-
-
-@router.message(F.text == "📊 Общий отчет")
-async def show_general_report(message: Message, staff_profile: StaffProfile):
-    """Show general shift report."""
-    if not staff_profile.location:
-        await message.answer("❌ У вас не назначена локация.")
-        return
-
-    @sync_to_async
-    def get_shift_and_summary():
-        shift = Shift.objects.filter(
-            location=staff_profile.location,
-            is_closed=False
-        ).select_related('staff__user', 'location').first()
-
-        if shift:
-            summary = ReportService.get_shift_summary(shift)
-            ShiftLogger.log_report_view(shift, "Общий отчет")
-            shift_data = {
-                'staff_name': shift.staff.full_name,
-                'location_name': shift.location.name,
-                'started_at': shift.started_at,
-            }
-            return shift_data, summary
-        return None, None
-
-    shift_data, summary = await get_shift_and_summary()
-
-    if not shift_data:
-        await message.answer("❌ Нет открытой смены.")
-        return
-
-    # Build product summary for sales
-    product_lines = []
-    for product_name, data in summary['product_summary'].items():
-        product_lines.append(f"  • {product_name}: {data['qty']} шт - {data['amount']}₸")
-
-    product_summary = "\n".join(product_lines) if product_lines else "  Нет продаж"
-
-    # Build product summary for refunds
-    refund_lines = []
-    for product_name, data in summary['refund_summary'].items():
-        refund_lines.append(f"  • {product_name}: {data['qty']} шт - {data['amount']}₸")
-
-    refund_summary = "\n".join(refund_lines) if refund_lines else "  Нет возвратов"
-
-    report_text = (
-        f"📊 ОБЩИЙ ОТЧЕТ ПО СМЕНЕ\n\n"
-        f"👤 Сотрудник: {shift_data['staff_name']}\n"
-        f"📍 Локация: {shift_data['location_name']}\n"
-        f"🕐 Начало: {shift_data['started_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"💰 Продажи: {summary['sales_total']}₸ ({summary['sales_count']} шт)\n"
-        f"↩️ Возвраты: {summary['refunds_total']}₸ ({summary['refunds_count']} шт)\n"
-        f"💵 Наличные: {summary['total_cash']}₸\n"
-        f"💳 Карта: {summary['total_card']}₸\n"
-        f"📱 Перевод: {summary['total_transfer']}₸\n\n"
-        f"📦 Продажи по товарам:\n{product_summary}\n\n"
-        f"↩️ Возвраты по товарам:\n{refund_summary}"
-    )
-
-    await message.answer(report_text)
-
-
-@router.message(F.text == "💰 Финансовый отчет")
-async def show_financial_report(message: Message, staff_profile: StaffProfile):
-    """Show financial report (ADMIN/MANAGER only)."""
-    if staff_profile.role not in [StaffProfile.Role.ADMIN, StaffProfile.Role.MANAGER]:
-        await message.answer("❌ У вас нет доступа к финансовому отчету.")
-        return
-    if not staff_profile.location:
-        await message.answer("❌ У вас не назначена локация.")
-        return
-
-    @sync_to_async
-    def get_financial_data():
-        shift = Shift.objects.filter(
-            location=staff_profile.location,
-            is_closed=False
-        ).select_related('staff__user', 'location').first()
-
-        if shift:
-            financial = ReportService.get_financial_report(shift)
-            shift_data = {
-                'staff_name': shift.staff.full_name,
-                'location_name': shift.location.name,
-                'started_at': shift.started_at,
-            }
-            return shift_data, financial
-        return None, None
-
-    shift_data, financial = await get_financial_data()
-
-    if not shift_data:
-        await message.answer("❌ Нет открытой смены.")
-        return
-
-    report_text = (
-        f"💰 ФИНАНСОВЫЙ ОТЧЕТ\n\n"
-        f"👤 Сотрудник: {shift_data['staff_name']}\n"
-        f"📍 Локация: {shift_data['location_name']}\n"
-        f"🕐 Начало: {shift_data['started_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"💵 КАССА (ИТОГО): {financial['total_in_register']}₸\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📊 Разбивка по методам оплаты:\n"
-        f"  💵 Наличные: {financial['net_cash']}₸\n"
-        f"  💳 Карта: {financial['net_card']}₸\n"
-        f"  📱 Перевод: {financial['net_transfer']}₸\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📈 Детали:\n"
-        f"  ✅ Продажи: +{financial['sales_total']}₸\n"
-        f"  ❌ Возвраты: -{financial['refunds_total']}₸\n"
-        f"  💰 Чистая прибыль: {financial['net_total']}₸\n"
-        f"━━━━━━━━━━━━━━━━━━━━"
-    )
-
-    await message.answer(report_text)
-
-
-@router.message(F.text == "📦 Отчет продаж")
-async def show_sales_report(message: Message, staff_profile: StaffProfile):
-    """Show detailed sales report."""
-    if not staff_profile.location:
-        await message.answer("❌ У вас не назначена локация.")
-        return
-
-    @sync_to_async
-    def get_sales_data():
-        shift = Shift.objects.filter(
-            location=staff_profile.location,
-            is_closed=False
-        ).select_related('staff__user', 'location').first()
-
-        if shift:
-            sales = ReportService.get_sales_details(shift)
-            shift_data = {
-                'staff_name': shift.staff.full_name,
-                'started_at': shift.started_at,
-            }
-            return shift_data, sales
-        return None, None
-
-    shift_data, sales = await get_sales_data()
-
-    if not shift_data:
-        await message.answer("❌ Нет открытой смены.")
-        return
-
-    if not sales:
-        await message.answer("📦 Продаж пока не было.")
-        return
-
-    # Build sales list
-    sales_lines = []
-    for idx, sale in enumerate(sales, 1):
-        time_str = sale['time'].strftime('%H:%M')
-        payment_icon = {
-            'CASH': '💵',
-            'CARD': '💳',
-            'TRANSFER': '📱'
-        }.get(sale['payment_method_code'], '💰')
-
-        sales_lines.append(
-            f"{idx}. [{time_str}] {sale['product']}\n"
-            f"   {sale['qty']} шт × {sale['amount'] / sale['qty']}₸ = {sale['amount']}₸\n"
-            f"   {payment_icon} {sale['payment_method']}"
-        )
-
-    sales_text = "\n\n".join(sales_lines)
-    total = sum(s['amount'] for s in sales)
-
-    report_text = (
-        f"📦 ОТЧЕТ ПРОДАЖ\n\n"
-        f"👤 Сотрудник: {shift_data['staff_name']}\n"
-        f"🕐 Начало смены: {shift_data['started_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"{sales_text}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 ИТОГО: {total}₸ ({len(sales)} транзакций)"
-    )
-
-    await message.answer(report_text)
-
-
-@router.message(F.text == "↩️ Отчет возвратов")
-async def show_refunds_report(message: Message, staff_profile: StaffProfile):
-    """Show detailed refunds report (ADMIN/MANAGER only)."""
-    if staff_profile.role not in [StaffProfile.Role.ADMIN, StaffProfile.Role.MANAGER]:
-        await message.answer("❌ У вас нет доступа к отчету возвратов.")
-        return
-    if not staff_profile.location:
-        await message.answer("❌ У вас не назначена локация.")
-        return
-
-    @sync_to_async
-    def get_refunds_data():
-        shift = Shift.objects.filter(
-            location=staff_profile.location,
-            is_closed=False
-        ).select_related('staff__user', 'location').first()
-
-        if shift:
-            refunds = ReportService.get_refunds_details(shift)
-            shift_data = {
-                'staff_name': shift.staff.full_name,
-                'started_at': shift.started_at,
-            }
-            return shift_data, refunds
-        return None, None
-
-    shift_data, refunds = await get_refunds_data()
-
-    if not shift_data:
-        await message.answer("❌ Нет открытой смены.")
-        return
-
-    if not refunds:
-        await message.answer("↩️ Возвратов пока не было.")
-        return
-
-    # Build refunds list
-    refund_lines = []
-    for idx, refund in enumerate(refunds, 1):
-        time_str = refund['time'].strftime('%H:%M')
-        payment_icon = {
-            'CASH': '💵',
-            'CARD': '💳',
-            'TRANSFER': '📱'
-        }.get(refund['payment_method_code'], '💰')
-
-        refund_lines.append(
-            f"{idx}. [{time_str}] {refund['product']}\n"
-            f"   {refund['qty']} шт × {refund['amount'] / refund['qty']}₸ = {refund['amount']}₸\n"
-            f"   {payment_icon} {refund['payment_method']}"
-        )
-
-    refunds_text = "\n\n".join(refund_lines)
-    total = sum(r['amount'] for r in refunds)
-
-    report_text = (
-        f"↩️ ОТЧЕТ ВОЗВРАТОВ\n\n"
-        f"👤 Сотрудник: {shift_data['staff_name']}\n"
-        f"🕐 Начало смены: {shift_data['started_at'].strftime('%d.%m.%Y %H:%M')}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"{refunds_text}\n\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"💰 ИТОГО: {total}₸ ({len(refunds)} транзакций)"
-    )
-
-    await message.answer(report_text)
-
-
 @router.message(F.text == "📋 Инвентаризация")
 async def show_inventory_report(message: Message, staff_profile: StaffProfile):
-    """Show inventory report (ADMIN/MANAGER only)."""
+    """Show full inventory: storage and display stock for all products. Manager/Admin only."""
     if staff_profile.role not in [StaffProfile.Role.ADMIN, StaffProfile.Role.MANAGER]:
-        await message.answer("❌ У вас нет доступа к инвентаризации.")
+        await message.answer("❌ У вас нет доступа к этому разделу.")
         return
     if not staff_profile.location:
         await message.answer("❌ У вас не назначена локация.")
         return
 
     @sync_to_async
-    def get_inventory_data():
-        products = Product.objects.filter(
-            location=staff_profile.location,
-            is_active=True
-        ).select_related('category', 'storage_stock', 'display_stock').order_by('category__name', 'name')
-        
-        inventory = []
-        for product in products:
-            storage = getattr(product, 'storage_stock', None)
-            display = getattr(product, 'display_stock', None)
-            
-            storage_qty = storage.quantity if storage else Decimal('0.00')
-            display_qty = display.quantity if display else Decimal('0.00')
-            total_qty = storage_qty + display_qty
-            
-            inventory.append({
-                'category': product.category.name,
-                'product': product.name,
-                'storage': storage_qty,
-                'display': display_qty,
-                'total': total_qty,
-                'unit': product.unit,
-                'price': product.price
-            })
-        
-        return inventory
+    def get_inventory():
+        products = list(
+            Product.objects.filter(
+                location=staff_profile.location,
+                is_active=True
+            ).order_by('category__name', 'name').select_related('category')
+        )
+        storage_stocks = {
+            ss.product_id: ss.quantity
+            for ss in StorageStock.objects.filter(location=staff_profile.location)
+        }
+        display_stocks = {
+            ds.product_id: ds.quantity
+            for ds in DisplayStock.objects.filter(location=staff_profile.location)
+        }
+        return products, storage_stocks, display_stocks
 
-    inventory = await get_inventory_data()
+    products, storage_stocks, display_stocks = await get_inventory()
 
-    if not inventory:
-        await message.answer("📋 Нет товаров в инвентаре.")
+    if not products:
+        await message.answer("📋 Нет активных товаров.")
         return
 
-    # Group by category
-    categories = {}
-    for item in inventory:
-        cat = item['category']
-        if cat not in categories:
-            categories[cat] = []
-        categories[cat].append(item)
+    lines = ["📋 <b>Инвентаризация</b>\n"]
+    current_category = None
+    for product in products:
+        cat_name = product.category.name if product.category else "Без категории"
+        if cat_name != current_category:
+            current_category = cat_name
+            lines.append(f"\n<b>{current_category}</b>")
+        storage_qty = storage_stocks.get(product.id, 0)
+        display_qty = display_stocks.get(product.id, 0)
+        total_qty = storage_qty + display_qty
+        lines.append(
+            f"  • {product.name}: 📦 склад {storage_qty} / 🏪 витрина {display_qty}"
+            f" = {total_qty} {product.unit}"
+        )
 
-    # Build inventory text
-    inventory_lines = []
-    total_items = 0
+    await _send_chunked(message, "\n".join(lines))
 
-    for category, items in categories.items():
-        inventory_lines.append(f"\n📁 {category}:")
-        for item in items:
-            stock_status = "✅" if item['total'] > 0 else "❌"
-            inventory_lines.append(
-                f"  {stock_status} {item['product']}:\n"
-                f"     📦 Склад: {item['storage']} {item['unit']}\n"
-                f"     🏪 Витрина: {item['display']} {item['unit']}\n"
-                f"     📊 Всего: {item['total']} {item['unit']} ({item['price']}₸/{item['unit']})"
-            )
-            total_items += 1
 
-    header = (
-        f"📋 ИНВЕНТАРИЗАЦИЯ\n"
-        f"📍 Локация: {staff_profile.location.name}\n"
+PAYMENT_ICON = {'CASH': '💵', 'CARD': '💳', 'TRANSFER': '📱'}
+
+
+@router.message(F.text == "📈 Отчеты")
+async def show_current_session(message: Message, staff_profile: StaffProfile):
+    """Show current shift session: who opened it, transaction history, totals."""
+    if not staff_profile.location:
+        await message.answer("❌ У вас не назначена локация.")
+        return
+
+    @sync_to_async
+    def get_session_data():
+        shift = Shift.objects.filter(
+            location=staff_profile.location,
+            is_closed=False
+        ).select_related('staff__user', 'location').first()
+
+        if not shift:
+            return None, None, None, None
+
+        summary = ReportService.get_shift_summary(shift)
+        sales = ReportService.get_sales_details(shift)
+        refunds = ReportService.get_refunds_details(shift)
+        ShiftLogger.log_report_view(shift, "Текущая смена")
+
+        shift_info = {
+            'staff_name': shift.staff.full_name,
+            'location_name': shift.location.name,
+            'started_at': shift.started_at,
+        }
+        return shift_info, summary, sales, refunds
+
+    shift_info, summary, sales, refunds = await get_session_data()
+
+    if not shift_info:
+        await message.answer("❌ Нет открытой смены.")
+        return
+
+    # --- Summary block ---
+    net = summary['sales_total'] - summary['refunds_total']
+    summary_text = (
+        f"📊 <b>ТЕКУЩАЯ СМЕНА</b>\n\n"
+        f"👤 {shift_info['staff_name']}\n"
+        f"📍 {shift_info['location_name']}\n"
+        f"🕐 Открыта: {shift_info['started_at'].strftime('%d.%m %H:%M')}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Продажи:  <b>{summary['sales_total']}₸</b> ({summary['sales_count']} шт)\n"
+        f"↩️ Возвраты: <b>{summary['refunds_total']}₸</b> ({summary['refunds_count']} шт)\n"
+        f"📈 Итого:    <b>{net}₸</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💵 Наличные: {summary['total_cash']}₸\n"
+        f"💳 Карта:    {summary['total_card']}₸\n"
+        f"📱 Перевод:  {summary['total_transfer']}₸"
     )
-    footer = f"━━━━━━━━━━━━━━━━━━━━\n📊 Всего товаров: {total_items}"
+    await message.answer(summary_text, parse_mode="HTML")
 
-    # Split into chunks to stay within Telegram's 4096-char limit
-    MAX_LEN = 3800
-    chunks = []
-    current = header
-    for line in inventory_lines:
-        candidate = current + line + "\n"
-        if len(candidate) > MAX_LEN:
-            chunks.append(current)
-            current = line + "\n"
-        else:
-            current = candidate
-    if current:
-        chunks.append(current)
+    # --- Sales transactions ---
+    if sales:
+        lines = ["📦 <b>Продажи:</b>\n"]
+        for s in sales:
+            icon = PAYMENT_ICON.get(s['payment_method_code'], '💰')
+            lines.append(
+                f"  {s['time'].strftime('%H:%M')}  {s['product']}"
+                f" × {s['qty']} = <b>{s['amount']}₸</b> {icon}"
+            )
+        await _send_chunked(message, "\n".join(lines))
+    else:
+        await message.answer("📦 <b>Продажи:</b> пока нет", parse_mode="HTML")
 
-    for i, chunk in enumerate(chunks):
-        if i == len(chunks) - 1:
-            await message.answer(chunk + "\n" + footer)
-        else:
-            await message.answer(chunk)
+    # --- Refund transactions ---
+    if refunds:
+        lines = ["↩️ <b>Возвраты:</b>\n"]
+        for r in refunds:
+            icon = PAYMENT_ICON.get(r['payment_method_code'], '💰')
+            lines.append(
+                f"  {r['time'].strftime('%H:%M')}  {r['product']}"
+                f" × {r['qty']} = <b>{r['amount']}₸</b> {icon}"
+            )
+        await _send_chunked(message, "\n".join(lines))
+
+
+async def _send_chunked(message, text: str, max_len: int = 3800):
+    """Send text in chunks if it exceeds Telegram's 4096-char limit."""
+    for i in range(0, len(text), max_len):
+        await message.answer(text[i:i + max_len], parse_mode="HTML")
 
 
 # ============================================================================
