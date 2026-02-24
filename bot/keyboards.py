@@ -23,8 +23,7 @@ def get_manager_menu_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📦 Продажа"), KeyboardButton(text="↩️ Возврат")],
         [KeyboardButton(text="🛒 Закупка"), KeyboardButton(text="🔄 Перемещение")],
         [KeyboardButton(text="📊 Смена"), KeyboardButton(text="📈 Отчеты")],
-        [KeyboardButton(text="📋 Инвентаризация")],
-        [KeyboardButton(text="❓ Помощь")]
+        [KeyboardButton(text="📋 Инвентаризация"), KeyboardButton(text="❓ Помощь")]
     ]
     return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
@@ -41,26 +40,6 @@ def get_stock_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def get_reports_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Get reports menu keyboard for managers/admins (full access)."""
-    keyboard = [
-        [KeyboardButton(text="📊 Общий отчет")],
-        [KeyboardButton(text="💰 Финансовый отчет")],
-        [KeyboardButton(text="📦 Отчет продаж"), KeyboardButton(text="↩️ Отчет возвратов")],
-        [KeyboardButton(text="📋 Инвентаризация")],
-        [KeyboardButton(text="◀️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
-
-
-def get_cashier_reports_menu_keyboard() -> ReplyKeyboardMarkup:
-    """Get reports menu keyboard for cashiers (limited access)."""
-    keyboard = [
-        [KeyboardButton(text="📊 Общий отчет")],
-        [KeyboardButton(text="📦 Отчет продаж")],
-        [KeyboardButton(text="◀️ Назад")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 def get_shift_menu_keyboard(has_open_shift: bool) -> ReplyKeyboardMarkup:
