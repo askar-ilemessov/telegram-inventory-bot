@@ -17,6 +17,9 @@ fi
 echo "Running migrations..."
 python manage.py migrate --noinput
 
+echo "Collecting static files..."
+python manage.py collectstatic --noinput || true
+
 echo "Creating superuser if needed..."
 python manage.py shell -c "
 from django.contrib.auth import get_user_model

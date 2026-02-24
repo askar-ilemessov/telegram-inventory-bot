@@ -131,7 +131,6 @@ class Transaction(models.Model):
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.01'))],
         verbose_name="Сумма"
     )
     notes = models.TextField(blank=True, verbose_name="Примечания")
@@ -176,7 +175,6 @@ class Payment(models.Model):
     amount = models.DecimalField(
         max_digits=10,
         decimal_places=2,
-        validators=[MinValueValidator(Decimal('0.01'))],
         verbose_name="Сумма"
     )
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
@@ -229,4 +227,43 @@ class StockCount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.product.name}: {self.quantity} ({self.shift})"
+
+
+class ShiftSnapshot(models.Model):
+    """
+    Stock snapshot taken during shift close (optional).
+    Stores display inventory state at shift close for verification.
+    """
+    shift = models.ForeignKey(
+        Shift,
+        on_delete=models.PROTECT,
+        related_name='stock_snapshots',
+        verbose_name="Смена"
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.PROTECT,
+        related_name='shift_snapshots',
+        verbose_name="Товар"
+    )
+    quantity = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        verbose_name="Количество на витрине"
+    )
+    notes = models.TextField(blank=True, verbose_name="Примечания")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
+
+    class Meta:
+        verbose_name = "Снимок остатков смены"
+        verbose_name_plural = "Снимки остатков смен"
+        ordering = ['-created_at']
+        unique_together = [['shift', 'product']]
+        indexes = [
+            models.Index(fields=['shift', 'product']),
+        ]
+
+    def __str__(self) -> str:
+        return f"Снимок: {self.product.name} - {self.quantity} ({self.shift})"
+
 

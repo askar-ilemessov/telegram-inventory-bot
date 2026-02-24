@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+
+{% block title %}Склад и Витрина - Inventory POS{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h4 class="card-title">
+                    <i class="bi bi-building"></i> {{ location.name }}
+                </h4>
+                <p class="card-text text-muted mb-0">
+                    <i class="bi bi-person"></i> {{ staff_profile.full_name }} 
+                    <span class="badge bg-info">{{ staff_profile.get_role_display }}</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-12">
+        <h2><i class="bi bi-box-seam"></i> Управление товарами</h2>
+        <p class="text-muted">Закупка товаров и перемещение на витрину</p>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="row">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Категория</th>
+                                <th>Товар</th>
+                                <th>Цена продажи</th>
+                                <th class="text-center">
+                                    <i class="bi bi-box"></i> Склад
+                                </th>
+                                <th class="text-center">
+                                    <i class="bi bi-shop"></i> Витрина
+                                </th>
+                                <th class="text-center">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-secondary">{{ product.category.name }}</span>
+                                </td>
+                                <td>
+                                    <strong>{{ product.name }}</strong>
+                                </td>
+                                <td>
+                                    <strong>{{ product.price }}₸</strong> / {{ product.unit }}
+                                </td>
+                                <td class="text-center">
+                                    {% if product.storage_stock.quantity > 0 %}
+                                        <span class="badge stock-badge stock-good">
+                                            {{ product.storage_stock.quantity }} {{ product.unit }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge stock-badge stock-low">
+                                            0 {{ product.unit }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if product.display_stock and product.display_stock.quantity > 10 %}
+                                        <span class="badge stock-badge stock-good">
+                                            {{ product.display_stock.quantity }} {{ product.unit }}
+                                        </span>
+                                    {% elif product.display_stock and product.display_stock.quantity > 0 %}
+                                        <span class="badge stock-badge stock-medium">
+                                            {{ product.display_stock.quantity }} {{ product.unit }}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge stock-badge stock-low">
+                                            0 {{ product.unit }}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <div class="btn-group btn-group-sm" role="group">
+                                        <a href="{% url 'purchase_product' product.id %}" 
+                                           class="btn btn-success" 
+                                           title="Закупка">
+                                            <i class="bi bi-cart-plus"></i> Закупка
+                                        </a>
+                                        {% if product.storage_stock.quantity > 0 %}
+                                        <a href="{% url 'transfer_to_display' product.id %}" 
+                                           class="btn btn-primary" 
+                                           title="Переместить на витрину">
+                                            <i class="bi bi-arrow-right"></i> На витрину
+                                        </a>
+                                        {% else %}
+                                        <button class="btn btn-secondary" disabled title="Нет товара на складе">
+                                            <i class="bi bi-arrow-right"></i> На витрину
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center text-muted">
+                                    <i class="bi bi-inbox"></i> Нет товаров
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Legend -->
+<div class="row mt-3">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title">Обозначения:</h6>
+                <div class="d-flex gap-3">
+                    <div>
+                        <span class="badge stock-badge stock-good">Хороший запас</span>
+                    </div>
+                    <div>
+                        <span class="badge stock-badge stock-medium">Мало товара</span>
+                    </div>
+                    <div>
+                        <span class="badge stock-badge stock-low">Нет в наличии</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

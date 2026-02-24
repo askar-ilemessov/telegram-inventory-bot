@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Перемещение на витрину - {{ product.name }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">
+                    <i class="bi bi-arrow-right-circle"></i> Перемещение на витрину
+                </h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Товар:</strong> {{ product.name }} ({{ product.category.name }})
+                    <br>
+                    <strong>На складе:</strong> {{ storage.quantity }} {{ product.unit }}
+                    <br>
+                    <strong>На витрине:</strong> {{ product.display_stock.quantity|default:0 }} {{ product.unit }}
+                </div>
+
+                {% if storage.quantity <= 0 %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Внимание!</strong> На складе нет товара для перемещения.
+                    <br>
+                    Сначала оформите закупку.
+                </div>
+                <a href="{% url 'purchase_product' product.id %}" class="btn btn-success">
+                    <i class="bi bi-cart-plus"></i> Оформить закупку
+                </a>
+                <a href="{% url 'inventory_dashboard' %}" class="btn btn-secondary">
+                    <i class="bi bi-arrow-left"></i> Назад
+                </a>
+                {% else %}
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    <div class="mb-3">
+                        <label for="quantity" class="form-label">
+                            <i class="bi bi-box"></i> Количество для перемещения *
+                        </label>
+                        <div class="input-group">
+                            <input type="number" 
+                                   class="form-control" 
+                                   id="quantity" 
+                                   name="quantity" 
+                                   step="0.01" 
+                                   min="0.01" 
+                                   max="{{ storage.quantity }}" 
+                                   required 
+                                   placeholder="Максимум: {{ storage.quantity }}">
+                            <span class="input-group-text">{{ product.unit }}</span>
+                        </div>
+                        <small class="form-text text-muted">
+                            Доступно на складе: {{ storage.quantity }} {{ product.unit }}
+                        </small>
+                    </div>
+
+                    <div class="alert alert-light border">
+                        <h6><i class="bi bi-calculator"></i> Результат перемещения:</h6>
+                        <div id="preview">
+                            <p class="mb-1">
+                                <strong>Склад:</strong> 
+                                <span id="storage-after">{{ storage.quantity }}</span> {{ product.unit }}
+                            </p>
+                            <p class="mb-0">
+                                <strong>Витрина:</strong> 
+                                <span id="display-after">{{ product.display_stock.quantity|default:0 }}</span> {{ product.unit }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-arrow-right-circle"></i> Переместить на витрину
+                        </button>
+                        <a href="{% url 'inventory_dashboard' %}" class="btn btn-secondary">
+                            <i class="bi bi-x-circle"></i> Отмена
+                        </a>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Live preview of transfer result
+    document.addEventListener('DOMContentLoaded', function() {
+        const quantityInput = document.getElementById('quantity');
+        const storageAfter = document.getElementById('storage-after');
+        const displayAfter = document.getElementById('display-after');
+        
+        const storageInitial = {{ storage.quantity }};
+        const displayInitial = {{ product.display_stock.quantity|default:0 }};
+        
+        quantityInput.addEventListener('input', function() {
+            const transferQty = parseFloat(this.value) || 0;
+            
+            const newStorage = storageInitial - transferQty;
+            const newDisplay = displayInitial + transferQty;
+            
+            storageAfter.textContent = newStorage.toFixed(2);
+            displayAfter.textContent = newDisplay.toFixed(2);
+            
+            // Validation
+            if (transferQty > storageInitial) {
+                this.setCustomValidity('Недостаточно товара на складе');
+            } else {
+                this.setCustomValidity('');
+            }
+        });
+    });
+</script>
+{% endblock %}

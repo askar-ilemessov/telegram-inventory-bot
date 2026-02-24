@@ -8,8 +8,8 @@ from django.db import transaction
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.core.models import StaffProfile, Location
-from apps.inventory.models import Product
-from .models import Shift, Transaction, Payment, StockCount
+from apps.inventory.models import Product, DisplayStock, StorageStock
+from .models import Shift, Transaction, Payment, ShiftSnapshot
 
 
 class ShiftService:
@@ -110,7 +110,7 @@ class ShiftService:
             for product_id, quantity in stock_counts.items():
                 try:
                     product = Product.objects.get(id=product_id)
-                    StockCount.objects.create(
+                    ShiftSnapshot.objects.create(
                         shift=shift,
                         product=product,
                         quantity=quantity
@@ -122,147 +122,87 @@ class ShiftService:
 
 
 class TransactionService:
-    """Service for managing transactions."""
-    
+    """Service for managing POS transactions."""
+
     @staticmethod
     @transaction.atomic
-    def create_sale(
-        shift: Shift,
-        product: Product,
-        qty: Decimal,
-        payment_method: str,
-        notes: str = ""
-    ) -> Transaction:
+    def create_sale(shift, product, qty, payment_method):
         """
-        Create a sale transaction with payment.
-        Uses select_for_update to prevent race conditions.
-        
-        Args:
-            shift: Active Shift instance
-            product: Product being sold
-            qty: Quantity sold (must be positive)
-            payment_method: Payment method (CASH, CARD, TRANSFER)
-            notes: Optional notes
-            
-        Returns:
-            Created Transaction instance
-            
-        Raises:
-            ValidationError: If validation fails
+        Create sale transaction.
+        Decreases DisplayStock quantity.
         """
-        # Validate shift is open
-        if shift.is_closed:
-            raise ValidationError("Смена закрыта. Невозможно создать продажу.")
-        
-        # Validate shift location matches product location
-        if shift.location != product.location:
-            raise ValidationError(
-                f"Товар {product.name} не принадлежит локации {shift.location.name}"
+        # Lock DisplayStock for update
+        try:
+            display_stock = DisplayStock.objects.select_for_update().get(
+                product=product,
+                location=shift.location
             )
-        
-        # Validate product is active
-        if not product.is_active:
-            raise ValidationError(f"Товар {product.name} неактивен")
-        
-        # Validate quantity
-        if qty <= Decimal('0.00'):
-            raise ValidationError("Количество должно быть больше нуля")
+        except DisplayStock.DoesNotExist:
+            raise ValidationError(f"Товар {product.name} отсутствует на витрине")
 
-        # Lock product row to prevent concurrent modifications
-        product = Product.objects.select_for_update().get(pk=product.pk)
-
-        # Validate sufficient stock
-        if product.stock_quantity < qty:
+        # Validate stock
+        if display_stock.quantity < qty:
             raise ValidationError(
-                f"Недостаточно товара {product.name}. "
-                f"В наличии: {product.stock_quantity}, требуется: {qty}"
+                f"Недостаточно товара на витрине. Доступно: {display_stock.quantity}"
             )
 
-        # Calculate amount
-        amount = product.price * qty
+        # Update display stock
+        display_stock.update_quantity(-qty)
 
         # Create transaction
-        trans = Transaction.objects.create(
+        amount = product.price * qty
+        txn = Transaction.objects.create(
             shift=shift,
             product=product,
             transaction_type=Transaction.TransactionType.SALE,
             qty=qty,
-            amount=amount,
-            notes=notes
+            amount=amount
         )
 
         # Create payment
         Payment.objects.create(
-            transaction=trans,
+            transaction=txn,
             method=payment_method,
             amount=amount
         )
 
-        # Update product stock
-        product.update_stock(-qty)
-
-        return trans
+        return txn
 
     @staticmethod
     @transaction.atomic
-    def create_refund(
-        shift: Shift,
-        product: Product,
-        qty: Decimal,
-        payment_method: str,
-        notes: str = ""
-    ) -> Transaction:
+    def create_refund(shift, product, qty, payment_method):
         """
-        Create a refund transaction.
-
-        Args:
-            shift: Active Shift instance
-            product: Product being refunded
-            qty: Quantity refunded (must be positive)
-            payment_method: Payment method for refund
-            notes: Optional notes
-
-        Returns:
-            Created Transaction instance
-
-        Raises:
-            ValidationError: If validation fails
+        Create refund transaction.
+        Increases DisplayStock quantity.
         """
-        # Validate shift is open
-        if shift.is_closed:
-            raise ValidationError("Смена закрыта. Невозможно создать возврат.")
+        # Lock DisplayStock for update (or create if doesn't exist)
+        display_stock, created = DisplayStock.objects.select_for_update().get_or_create(
+            product=product,
+            location=shift.location,
+            defaults={'quantity': Decimal('0.00')}
+        )
 
-        # Validate quantity
-        if qty <= Decimal('0.00'):
-            raise ValidationError("Количество должно быть больше нуля")
-
-        # Lock product row
-        product = Product.objects.select_for_update().get(pk=product.pk)
-
-        # Calculate amount
-        amount = product.price * qty
+        # Update display stock
+        display_stock.update_quantity(qty)
 
         # Create transaction
-        trans = Transaction.objects.create(
+        amount = product.price * qty
+        txn = Transaction.objects.create(
             shift=shift,
             product=product,
             transaction_type=Transaction.TransactionType.REFUND,
             qty=qty,
-            amount=amount,
-            notes=notes
+            amount=-amount
         )
 
-        # Create payment (negative for refund)
+        # Create payment (negative amount for refund)
         Payment.objects.create(
-            transaction=trans,
+            transaction=txn,
             method=payment_method,
-            amount=amount
+            amount=-amount
         )
 
-        # Update product stock (add back)
-        product.update_stock(qty)
-
-        return trans
+        return txn
 
     @staticmethod
     @transaction.atomic
@@ -306,8 +246,13 @@ class TransactionService:
             notes=notes
         )
 
-        # Update product stock
-        product.update_stock(qty)
+        # Update display stock
+        display_stock, _ = DisplayStock.objects.select_for_update().get_or_create(
+            product=product,
+            location=shift.location,
+            defaults={'quantity': Decimal('0.00')}
+        )
+        display_stock.update_quantity(qty)
 
         return trans
 
@@ -335,12 +280,13 @@ class ReportService:
         sales_total = sum((t.amount for t in sales), Decimal('0.00'))
 
         refunds_count = refunds.count()
-        refunds_total = sum((t.amount for t in refunds), Decimal('0.00'))
+        # Refund amounts are stored as negative; expose as positive for display
+        refunds_total = abs(sum((t.amount for t in refunds), Decimal('0.00')))
 
         net_total = sales_total - refunds_total
 
-        # Calculate payment method totals from actual transactions (not from shift fields)
-        # This works for both open and closed shifts
+        # Calculate payment method totals.
+        # Refund payment amounts are already negative, so += correctly reduces each total.
         total_cash = Decimal('0.00')
         total_card = Decimal('0.00')
         total_transfer = Decimal('0.00')
@@ -354,15 +300,14 @@ class ReportService:
                 elif payment.method == Payment.PaymentMethod.TRANSFER:
                     total_transfer += payment.amount
 
-        # Subtract refunds from payment totals
         for trans in refunds:
             for payment in trans.payments.all():
                 if payment.method == Payment.PaymentMethod.CASH:
-                    total_cash -= payment.amount
+                    total_cash += payment.amount   # payment.amount is negative → cash decreases
                 elif payment.method == Payment.PaymentMethod.CARD:
-                    total_card -= payment.amount
+                    total_card += payment.amount
                 elif payment.method == Payment.PaymentMethod.TRANSFER:
-                    total_transfer -= payment.amount
+                    total_transfer += payment.amount
 
         # Group sales by product
         product_summary: Dict[str, Dict] = {}
@@ -376,7 +321,7 @@ class ReportService:
             product_summary[product_name]['qty'] += trans.qty
             product_summary[product_name]['amount'] += trans.amount
 
-        # Group refunds by product
+        # Group refunds by product; expose amounts as positive for display
         refund_summary: Dict[str, Dict] = {}
         for trans in refunds:
             product_name = trans.product.name
@@ -386,7 +331,7 @@ class ReportService:
                     'amount': Decimal('0.00')
                 }
             refund_summary[product_name]['qty'] += trans.qty
-            refund_summary[product_name]['amount'] += trans.amount
+            refund_summary[product_name]['amount'] += abs(trans.amount)
 
         return {
             'shift': shift,
@@ -453,7 +398,7 @@ class ReportService:
                 'time': trans.created_at,
                 'product': trans.product.name,
                 'qty': trans.qty,
-                'amount': trans.amount,
+                'amount': abs(trans.amount),  # stored negative; expose as positive for display
                 'payment_method': payment.get_method_display() if payment else 'Н/Д',
                 'payment_method_code': payment.method if payment else None,
             })
