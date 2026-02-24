@@ -24,9 +24,6 @@ COPY . /app/
 # Make entrypoint executable
 RUN chmod +x /app/entrypoint.sh
 
-# Collect static files for Django admin
-RUN python manage.py collectstatic --noinput 2>/dev/null || true
-
 # Create directory for shift logs
 RUN mkdir -p /app/shift_logs
 
